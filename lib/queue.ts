@@ -104,20 +104,54 @@ export async function getPosition(entry: QueueEntry): Promise<number> {
 }
 
 /**
+ * Libera o horário (Slot) que estava reservado para uma entrada, se houver,
+ * e devolve o id dele para poder ser oferecido ao próximo compatível.
+ */
+export async function releaseSlotOf(entryId: string): Promise<string | undefined> {
+  const slot = await prisma.slot.findFirst({
+    where: { claimedByEntry: entryId },
+  });
+  if (!slot) return undefined;
+
+  await prisma.slot.update({
+    where: { id: slot.id },
+    data: { claimedByEntry: null },
+  });
+  return slot.id;
+}
+
+/**
  * Chama o próximo cliente da fila, se ainda não houver ninguém NOTIFIED
  * aguardando confirmação (evita chamar dois clientes ao mesmo tempo).
  * Usa Establishment.notifyWindowMins como prazo de expiração.
  *
+ * Sem slotId: FIFO simples (como antes).
+ * Com slotId: só chama quem for compatível com a duração do horário, e o
+ * horário fica reservado para a pessoa chamada (Slot.claimedByEntry).
+ * Se o horário não existir ou já estiver reservado, ninguém é chamado.
+ *
  * Quem decide QUEM é o próximo é a Parte B (findNextCompatibleEntry) —
  * este arquivo só orquestra notificação e expiração em cima do resultado.
  */
-export async function notifyNext(establishmentId: string): Promise<QueueEntry | null> {
+export async function notifyNext(
+  establishmentId: string,
+  slotId?: string
+): Promise<QueueEntry | null> {
   const alreadyNotified = await prisma.queueEntry.findFirst({
     where: { establishmentId, status: "NOTIFIED" },
   });
   if (alreadyNotified) return null;
 
-  const next = await findNextCompatibleEntry(establishmentId);
+  let slot: { id: string; startsAt: Date; endsAt: Date } | null = null;
+  if (slotId) {
+    const found = await prisma.slot.findFirst({
+      where: { id: slotId, establishmentId, claimedByEntry: null },
+    });
+    if (!found) return null;
+    slot = { id: found.id, startsAt: found.startsAt, endsAt: found.endsAt };
+  }
+
+  const next = await findNextCompatibleEntry(establishmentId, slot);
   if (!next) return null;
 
   const establishment = await prisma.establishment.findUniqueOrThrow({
@@ -127,17 +161,51 @@ export async function notifyNext(establishmentId: string): Promise<QueueEntry | 
   const notifiedAt = new Date();
   const notifyExpiresAt = new Date(notifiedAt.getTime() + establishment.notifyWindowMins * 60_000);
 
-  const updated = await prisma.queueEntry.update({
-    where: { id: next.id },
-    data: { status: "NOTIFIED", notifiedAt, notifyExpiresAt },
-  });
+  // Copia const para o TypeScript manter o tipo dentro da closure.
+  const claimSlot = slot;
+
+  let updated: QueueEntry | null;
+  try {
+    // Reserva o horário e marca como NOTIFIED na mesma transação: se o
+    // horário já foi pego por outra chamada ao mesmo tempo, ninguém é chamado.
+    updated = await prisma.$transaction(async (tx) => {
+      if (claimSlot) {
+        const claimed = await tx.slot.updateMany({
+          where: { id: claimSlot.id, claimedByEntry: null },
+          data: { claimedByEntry: next.id },
+        });
+        if (claimed.count === 0) return null;
+      }
+
+      return tx.queueEntry.update({
+        where: { id: next.id, status: "WAITING" },
+        data: { status: "NOTIFIED", notifiedAt, notifyExpiresAt },
+      });
+    });
+  } catch (err) {
+    // Ex.: a entrada foi cancelada no meio do caminho. A transação é
+    // desfeita, então o horário não fica reservado à toa.
+    console.error(`Falha ao chamar a entrada ${next.id}:`, err);
+    return null;
+  }
+
+  if (!updated) return null;
 
   try {
-    await sendWhatsAppMessage(
-      establishment.whatsappPhoneId,
-      updated.customerPhone,
-      `Chegou sua vez! Você tem ${establishment.notifyWindowMins} minutos para confirmar, ou perderá a vez.`
-    );
+    let text = `Chegou sua vez! Você tem ${establishment.notifyWindowMins} minutos para confirmar, ou perderá a vez.`;
+
+    // Só cita o horário se ele ainda está no futuro (o horário do botão é
+    // calculado quando a página abre, então pode já ter passado).
+    if (claimSlot && claimSlot.startsAt.getTime() > Date.now()) {
+      const hora = new Intl.DateTimeFormat("pt-BR", {
+        hour: "2-digit",
+        minute: "2-digit",
+        timeZone: establishment.timezone,
+      }).format(claimSlot.startsAt);
+      text = `Chegou sua vez! Abriu um horário às ${hora}. Você tem ${establishment.notifyWindowMins} minutos para confirmar, ou perderá a vez.`;
+    }
+
+    await sendWhatsAppMessage(establishment.whatsappPhoneId, updated.customerPhone, text);
   } catch (err) {
     // O status já mudou pra NOTIFIED no banco antes disso — mesmo que o
     // envio da mensagem falhe (token expirado, rede, restrição da Meta),
@@ -171,8 +239,9 @@ export async function expireStaleNotifications(establishmentId?: string): Promis
       data: { status: "EXPIRED", respondedAt: now },
     });
 
-    // Libera vaga pro próximo dessa mesma fila.
-    await notifyNext(entry.establishmentId);
+    // Libera o horário reservado (se havia) e oferece ao próximo compatível.
+    const slotId = await releaseSlotOf(entry.id);
+    await notifyNext(entry.establishmentId, slotId);
   }
 
   return stale.length;
@@ -246,7 +315,9 @@ export async function confirmNotifiedEntryByPhone(
     } catch (err) {
       console.error(`Falha ao avisar expiração para ${customerPhone}:`, err);
     }
-    await notifyNext(establishmentId);
+
+    const slotId = await releaseSlotOf(entry.id);
+    await notifyNext(establishmentId, slotId);
     return expired;
   }
 

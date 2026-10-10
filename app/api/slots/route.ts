@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
   });
 
   try {
-    const notifiedEntry = await notifyNext(establishmentId);
+    const notifiedEntry = await notifyNext(establishmentId, slot.id);
 
     if (!notifiedEntry) {
       return NextResponse.json(

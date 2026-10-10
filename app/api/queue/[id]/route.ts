@@ -2,10 +2,29 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireStaff } from "@/lib/auth";
+import { notifyNext, releaseSlotOf } from "@/lib/queue";
 
 const patchSchema = z.object({
   action: z.enum(["confirm", "cancel"]),
 });
+
+// Libera o horário reservado por uma entrada que saiu da fila e oferece
+// o horário ao próximo compatível. Nunca derruba a resposta da rota:
+// se algo falhar aqui, a entrada já foi atualizada e só logamos o erro.
+async function releaseAndOfferNext(
+  establishmentId: string,
+  entryId: string,
+  alwaysCallNext: boolean
+) {
+  try {
+    const slotId = await releaseSlotOf(entryId);
+    if (slotId || alwaysCallNext) {
+      await notifyNext(establishmentId, slotId);
+    }
+  } catch (err) {
+    console.error("Erro ao liberar horário / chamar próximo:", err);
+  }
+}
 
 export async function PATCH(
   req: NextRequest,
@@ -69,6 +88,18 @@ export async function PATCH(
       data: { status: "CANCELLED" },
     });
 
+    // Se a entrada já tinha sido chamada ou confirmada, o horário reservado
+    // para ela volta a ficar livre e é oferecido ao próximo compatível.
+    // NOTIFIED sempre destrava a fila (chama o próximo mesmo sem horário);
+    // CONFIRMED só chama alguém se havia um horário reservado.
+    if (entry.status === "NOTIFIED" || entry.status === "CONFIRMED") {
+      await releaseAndOfferNext(
+        establishmentId,
+        entry.id,
+        entry.status === "NOTIFIED"
+      );
+    }
+
     return NextResponse.json({ message: "Entrada cancelada.", entry: updated });
   }
 
@@ -85,6 +116,9 @@ export async function PATCH(
       where: { id, establishmentId },
       data: { status: "EXPIRED" },
     });
+
+    // Mesmo tratamento da expiração automática: libera o horário e chama o próximo.
+    await releaseAndOfferNext(establishmentId, entry.id, true);
 
     return NextResponse.json(
       { error: "O prazo para confirmar esse horário já expirou.", entry: expired },

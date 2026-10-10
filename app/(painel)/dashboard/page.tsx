@@ -44,8 +44,6 @@ export default async function DashboardPage() {
         <div className="mb-6">
           <BotaoMarcarCancelamento
             establishmentId={session.user.establishmentId}
-            startsAt={new Date(Date.now() + 30 * 60 * 1000).toISOString()}
-            endsAt={new Date(Date.now() + 60 * 60 * 1000).toISOString()}
           />
         </div>
 

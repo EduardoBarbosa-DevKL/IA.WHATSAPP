@@ -9,10 +9,14 @@ type Resultado =
 
 interface BotaoMarcarCancelamentoProps {
   establishmentId: string;
-  startsAt: string; // ISO string
-  endsAt: string; // ISO string
   onResult?: (resultado: Resultado) => void;
 }
+
+// Durações que o salão pode oferecer ao liberar um horário.
+const DURACOES_MIN = [30, 45, 60, 90] as const;
+
+// O horário liberado começa daqui a quantos minutos (mesmo valor usado antes).
+const ANTECEDENCIA_MIN = 30;
 
 // Classes por tipo de resultado (escritas por extenso para o Tailwind enxergar).
 const RESULTADO_STYLE: Record<Resultado["tipo"], string> = {
@@ -20,6 +24,16 @@ const RESULTADO_STYLE: Record<Resultado["tipo"], string> = {
   "sucesso-sem-fila": "bg-warningSoft text-warning",
   erro: "bg-dangerSoft text-danger",
 };
+
+// Classes dos botões de duração (também por extenso para o Tailwind).
+const FOCO =
+  "focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-70";
+const DURACAO_ATIVA =
+  "rounded-lg border border-accent bg-accentSoft px-3 py-1.5 text-sm font-semibold text-accent " +
+  FOCO;
+const DURACAO_INATIVA =
+  "rounded-lg border border-border bg-surface px-3 py-1.5 text-sm font-medium text-inkSecondary transition-colors hover:bg-surfaceMuted " +
+  FOCO;
 
 function IconCalendar() {
   return (
@@ -41,12 +55,11 @@ function IconSpinner() {
 
 export default function BotaoMarcarCancelamento({
   establishmentId,
-  startsAt,
-  endsAt,
   onResult,
 }: BotaoMarcarCancelamentoProps) {
   const [loading, setLoading] = useState(false);
   const [resultado, setResultado] = useState<Resultado | null>(null);
+  const [duracao, setDuracao] = useState<number>(30);
 
   async function handleClick() {
     if (loading) return; // evita clique duplo
@@ -54,11 +67,19 @@ export default function BotaoMarcarCancelamento({
     setLoading(true);
     setResultado(null);
 
+    // O horário é calculado no momento do clique, não quando a página abre.
+    const inicio = new Date(Date.now() + ANTECEDENCIA_MIN * 60 * 1000);
+    const fim = new Date(inicio.getTime() + duracao * 60 * 1000);
+
     try {
       const res = await fetch("/api/slots", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ establishmentId, startsAt, endsAt }),
+        body: JSON.stringify({
+          establishmentId,
+          startsAt: inicio.toISOString(),
+          endsAt: fim.toISOString(),
+        }),
       });
 
       const data = await res.json();
@@ -101,27 +122,49 @@ export default function BotaoMarcarCancelamento({
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-4">
           <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-accentSoft text-accent">
-            <IconCalendar />
+<IconCalendar />
           </span>
           <div>
             <p className="text-sm font-semibold text-ink">
               Um horário vagou?
             </p>
             <p className="text-sm text-inkSecondary">
-              Registre o horário vago e o próximo da fila é avisado no WhatsApp.
+              Escolha a duração do horário vago e o próximo da fila que couber é avisado no WhatsApp.
             </p>
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={handleClick}
-          disabled={loading}
-          className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-accentHover focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-70"
-        >
-          {loading && <IconSpinner />}
-          {loading ? "Liberando..." : "Liberar horário"}
-        </button>
+        <div className="flex shrink-0 flex-col gap-3 sm:items-end">
+          <div
+            role="radiogroup"
+            aria-label="Duração do horário vago"
+            className="flex gap-2"
+          >
+            {DURACOES_MIN.map((min) => (
+              <button
+                key={min}
+                type="button"
+                role="radio"
+                aria-checked={duracao === min}
+                disabled={loading}
+                onClick={() => setDuracao(min)}
+                className={duracao === min ? DURACAO_ATIVA : DURACAO_INATIVA}
+              >
+                {min} min
+              </button>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={handleClick}
+            disabled={loading}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-accentHover focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            {loading && <IconSpinner />}
+            {loading ? "Liberando..." : "Liberar horário"}
+          </button>
+        </div>
       </div>
 
       {resultado && (
