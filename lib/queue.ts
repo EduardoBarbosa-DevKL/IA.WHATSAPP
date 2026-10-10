@@ -267,3 +267,84 @@ export async function confirmNotifiedEntryByPhone(
 
   return confirmed;
 }
+/**
+ * Resposta "sim" a uma oferta de horário. Só o primeiro leva o horário.
+ * Retorna true se tratou a mensagem (mesmo que seja "já preenchido").
+ */
+export async function claimOfferedSlotByPhone(
+  establishmentId: string,
+  customerPhone: string
+): Promise<boolean> {
+  const entries = await prisma.queueEntry.findMany({
+    where: { establishmentId, customerPhone, status: "WAITING", desiredDate: { not: null } },
+  });
+  if (entries.length === 0) return false;
+
+  const offer = await prisma.slotOffer.findFirst({
+    where: { queueEntryId: { in: entries.map((e) => e.id) } },
+    orderBy: { sentAt: "desc" },
+  });
+  if (!offer) return false;
+
+  const entry = entries.find((e) => e.id === offer.queueEntryId)!;
+  const slot = await prisma.slot.findUniqueOrThrow({ where: { id: offer.slotId } });
+  const est = await prisma.establishment.findUniqueOrThrow({ where: { id: establishmentId } });
+
+  const reply = async (text: string) => {
+    try {
+      await sendWhatsAppMessage(est.whatsappPhoneId, customerPhone, text);
+    } catch (err) {
+      console.error(`Falha ao responder ${customerPhone}:`, err);
+    }
+  };
+
+  if (slot.offerClosesAt && slot.offerClosesAt < new Date()) {
+    await reply("O prazo para esse horário já passou.");
+    return true;
+  }
+
+  // Alguém já marcou esse horário normalmente?
+  const taken = await prisma.appointment.findFirst({
+    where: { establishmentId, status: "SCHEDULED", startsAt: slot.startsAt },
+  });
+  if (taken) {
+    await reply("Esse horário já foi preenchido.");
+    return true;
+  }
+
+  // Corrida: só um updateMany consegue trocar null por um valor.
+  const claim = await prisma.slot.updateMany({
+    where: { id: slot.id, claimedByEntry: null },
+    data: { claimedByEntry: entry.id },
+  });
+  if (claim.count === 0) {
+    await reply("Esse horário já foi preenchido.");
+    return true;
+  }
+
+  try {
+    const appt = await prisma.appointment.create({
+      data: {
+        establishmentId,
+        serviceId: entry.serviceId,
+        customerPhone,
+        customerName: entry.customerName,
+        startsAt: slot.startsAt,
+        endsAt: slot.endsAt,
+      },
+    });
+    await prisma.slot.update({ where: { id: slot.id }, data: { claimedByAppointmentId: appt.id } });
+    await prisma.queueEntry.update({
+      where: { id: entry.id },
+      data: { status: "CONFIRMED", respondedAt: new Date() },
+    });
+  } catch (err) {
+    console.error("Falha ao criar agendamento, liberando o horário:", err);
+    await prisma.slot.update({ where: { id: slot.id }, data: { claimedByEntry: null } });
+    await reply("Não consegui confirmar agora. Tente responder SIM de novo.");
+    return true;
+  }
+
+  await reply("Confirmado! O horário é seu. Até lá.");
+  return true;
+}

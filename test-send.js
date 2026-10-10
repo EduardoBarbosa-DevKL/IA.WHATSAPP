@@ -3,7 +3,7 @@ require('dotenv').config();
 async function main() {
   const token = process.env.WHATSAPP_TOKEN;
   const phoneNumberId = '1317136151489296';
-  const to = '56994052585';
+  const to = '5562998341670';
 
   if (!token) {
     console.error('WHATSAPP_TOKEN não encontrado no .env');

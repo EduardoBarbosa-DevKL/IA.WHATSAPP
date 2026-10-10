@@ -10,7 +10,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { verifyWebhookSignature, parseIncomingMessages } from "@/lib/whatsapp";
-import { enterQueue, confirmNotifiedEntryByPhone, isConfirmationText } from "@/lib/queue";
+import { enterQueue, confirmNotifiedEntryByPhone, isConfirmationText, claimOfferedSlotByPhone } from "@/lib/queue";
 import { prisma } from "@/lib/prisma";
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -99,6 +99,8 @@ export async function POST(request: NextRequest) {
       // confirmação de horário e NÃO entra na fila de novo. Se não havia
       // nada pra confirmar (ex: "sim" fora de contexto), cai no fluxo normal.
       if (isConfirmationText(message.text)) {
+                const handled = await claimOfferedSlotByPhone(establishment.id, message.from);
+        if (handled) continue;
         const confirmResult = await confirmNotifiedEntryByPhone(establishment.id, message.from);
         if (confirmResult) {
           continue;
