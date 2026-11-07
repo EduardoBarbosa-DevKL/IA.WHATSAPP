@@ -2,11 +2,12 @@
   "name": "lista-espera-inteligente",
   "version": "0.1.0",
   "private": true,
-  "scripts": {
+    "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "test": "vitest run",
     "postinstall": "prisma generate",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
@@ -32,7 +33,8 @@
     "prisma": "5.17.0",
     "tailwindcss": "^3.4.19",
     "tsx": "^4.23.15",
-    "typescript": "5.5.4"
+    "typescript": "5.5.4",
+    "vitest": "^2.1.9"
   },
   "allowScripts": {
     "@prisma/client@5.17.0": true,
