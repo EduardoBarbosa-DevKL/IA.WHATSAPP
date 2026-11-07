@@ -25,8 +25,8 @@ export async function findNextCompatibleEntry(
   slot?: SlotWindow | null
 ): Promise<QueueEntry | null> {
   if (!slot) {
-    return prisma.queueEntry.findFirst({
-      where: { establishmentId, status: "WAITING" },
+      return prisma.queueEntry.findFirst({
+      where: { establishmentId, status: "WAITING", desiredDate: null },
       orderBy: { createdAt: "asc" },
     });
   }
@@ -34,10 +34,11 @@ export async function findNextCompatibleEntry(
   const slotMins = Math.floor((slot.endsAt.getTime() - slot.startsAt.getTime()) / 60_000);
   if (slotMins <= 0) return null;
 
-  return prisma.queueEntry.findFirst({
+ return prisma.queueEntry.findFirst({
     where: {
       establishmentId,
       status: "WAITING",
+      desiredDate: null,
       OR: [
         { serviceId: null },
         { service: { is: { durationMins: { lte: slotMins } } } },
