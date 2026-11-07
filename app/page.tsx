@@ -8,7 +8,7 @@ export default function HomePage() {
 
       <div className="w-full max-w-lg rounded-2xl border border-border bg-surface/80 p-10 text-center shadow-sm backdrop-blur-sm">
         <Image
-  src="/images/esse.png"
+  src="/images/esseq.png"
   alt="Logo"
   width={320}
   height={320}
