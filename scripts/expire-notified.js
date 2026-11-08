@@ -1,10 +1,9 @@
-const { PrismaClient } = require('@prisma/client');
-
+﻿const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
 async function main() {
   const establishment = await prisma.establishment.findFirst({
-    where: { whatsappPhoneId: '1317136151489296' },
+    where: { whatsappPhoneId: process.env.WHATSAPP_PHONE_NUMBER_ID },
   });
 
   if (!establishment) {
@@ -12,16 +11,18 @@ async function main() {
     process.exit(1);
   }
 
-  const entry = await prisma.queueEntry.create({
-    data: {
+  const result = await prisma.queueEntry.updateMany({
+    where: {
       establishmentId: establishment.id,
-      customerPhone: '56994052585',
-      customerName: 'Eduardo (teste real)',
-      status: 'WAITING',
+      status: 'NOTIFIED',
+    },
+    data: {
+      status: 'EXPIRED',
+      respondedAt: new Date(),
     },
   });
 
-  console.log('Cliente adicionado na fila:', entry);
+  console.log(`${result.count} entrada(s) expirada(s) manualmente.`);
 }
 
 main()

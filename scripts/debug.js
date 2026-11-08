@@ -1,4 +1,4 @@
-const { PrismaClient } = require('@prisma/client');
+﻿const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
 async function main() {
@@ -11,7 +11,7 @@ async function main() {
   console.log(staff);
 
   const entries = await prisma.queueEntry.findMany({
-    where: { customerPhone: '5562998341670' },
+    where: { customerPhone: process.env.TEST_PHONE_BR },
   });
   console.log('=== QueueEntries com esse telefone ===');
   console.log(entries);

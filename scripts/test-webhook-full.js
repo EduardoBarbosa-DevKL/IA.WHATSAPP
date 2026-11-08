@@ -1,4 +1,4 @@
-// scripts/test-webhook-full.js
+﻿// scripts/test-webhook-full.js
 // Simula uma mensagem de texto chegando no webhook, já com assinatura válida.
 // Roda com: node scripts/test-webhook-full.js
 
@@ -25,7 +25,7 @@ const payload = {
         {
           value: {
             messaging_product: "whatsapp",
-            metadata: { phone_number_id: "1317136151489296" },
+            metadata: { phone_number_id: process.env.WHATSAPP_PHONE_NUMBER_ID },
             contacts: [{ wa_id: "556233333333", profile: { name: "Teste RealTime9" } }],
             messages: [
               {

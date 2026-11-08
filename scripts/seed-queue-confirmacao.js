@@ -1,10 +1,10 @@
-const { PrismaClient } = require('@prisma/client');
+﻿const { PrismaClient } = require('@prisma/client');
 
 const prisma = new PrismaClient();
 
 async function main() {
   const establishment = await prisma.establishment.findFirst({
-    where: { whatsappPhoneId: '1317136151489296' },
+    where: { whatsappPhoneId: process.env.WHATSAPP_PHONE_NUMBER_ID },
   });
 
   if (!establishment) {
@@ -15,7 +15,7 @@ async function main() {
   const entry = await prisma.queueEntry.create({
     data: {
       establishmentId: establishment.id,
-      customerPhone: '56994052585',
+      customerPhone: process.env.TEST_PHONE,
       customerName: 'Teste Confirmação',
       status: 'WAITING',
     },

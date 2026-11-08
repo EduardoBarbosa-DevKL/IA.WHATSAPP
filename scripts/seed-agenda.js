@@ -1,8 +1,8 @@
-const { PrismaClient } = require('@prisma/client');
+﻿const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
 async function main() {
-  const est = await prisma.establishment.findFirst({ where: { whatsappPhoneId: '1317136151489296' } });
+  const est = await prisma.establishment.findFirst({ where: { whatsappPhoneId: process.env.WHATSAPP_PHONE_NUMBER_ID } });
   if (!est) { console.error('Establishment não encontrado.'); process.exit(1); }
 
   const slotAt = (h) => {
@@ -30,7 +30,7 @@ async function main() {
   await prisma.queueEntry.create({
     data: {
       establishmentId: est.id,
-      customerPhone: '56994052585',
+      customerPhone: '556298341670',
       customerName: 'Teste Interesse',
       status: 'WAITING',
       desiredDate: desired,
